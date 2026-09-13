@@ -8,9 +8,12 @@
   :root { --bg:#faf8ef; }
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent;
       touch-action:none; }
-  body { font-family:"Segoe UI",system-ui,sans-serif; background:var(--bg);
+  body { font-family:"Segoe UI",system-ui,sans-serif;
+         background:linear-gradient(rgba(250,248,239,.55),rgba(250,248,239,.55)),
+                    url("bg.jpg") center/cover no-repeat fixed var(--bg);
          display:flex; flex-direction:column; align-items:center; min-height:100vh;
          user-select:none; }
+  h1 { text-shadow:0 1px 6px rgba(250,248,239,.9); }
   h1 { font-size:clamp(2rem,8vw,3rem); color:#776e65; margin:12px 0 4px; }
   .bar { display:flex; gap:8px; margin:6px 0 12px; }
   .score { background:#bbada0; color:#fff; border-radius:6px; padding:6px 16px;
