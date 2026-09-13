@@ -196,17 +196,35 @@ function step(dir){
   for(const id of r.drops){const d=tiles.get(id);if(d){d.el.remove();tiles.delete(id);}}
   addRandom();
   render();
-  if(checkOver()){over=true;msgEl.textContent="游戏结束！点新游戏再来";}
+  if(checkOver()){over=true;msgEl.textContent="游戏结束！点新游戏再来";clearSave();}
+  else saveGame();
+}
+// per-size autosave: every move is stored, page reload resumes it
+function saveKey(){return "game2048_"+N;}
+function saveGame(){
+  try{localStorage.setItem(saveKey(),JSON.stringify(
+    {s:score,g:grid.map(r=>r.map(c=>c?c.v:0))}));}catch(e){}
+}
+function clearSave(){try{localStorage.removeItem(saveKey());}catch(e){}}
+function restoreGame(){
+  let d=null;
+  try{d=JSON.parse(localStorage.getItem(saveKey())||"null");}catch(e){}
+  if(!d||!Array.isArray(d.g)||d.g.length!==N)return false;
+  if(!d.g.every(r=>Array.isArray(r)&&r.length===N&&
+      r.every(v=>v===0||(v>=2&&(v&(v-1))===0))))return false;
+  grid=d.g.map(r=>r.map(v=>v?{v,id:++idSeq}:null));
+  score=d.s|0; over=false;
+  render();
+  return true;
 }
 sizeSel.onchange=()=>{N=+sizeSel.value;try{localStorage.setItem("size2048",N);}catch(e){}
-  buildCells();newGame();render();};
-document.getElementById("btn").onclick=()=>{newGame();render();};
+  buildCells();if(!restoreGame()){newGame();render();}};
+document.getElementById("btn").onclick=()=>{clearSave();newGame();render();};
 document.querySelectorAll("#dpad button[data-dir]").forEach(b=>{
   b.addEventListener("click",()=>step(+b.dataset.dir));
 });
 buildCells();
-newGame();
-render();
+if(!restoreGame()){newGame();render();}
 
 /* ---- input ---- */
 addEventListener("keydown",e=>{
