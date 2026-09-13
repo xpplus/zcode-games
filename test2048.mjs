@@ -42,21 +42,15 @@ N=5;
 setGrid([[2,2,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]]);
 move(3); eq("5x5 left merge",vals()[0],[4,0,0,0,0]);
 
-// --- spawn value options ---
-spawn4=0;  let only2=true, only4=true;
-for(let i=0;i<300;i++){N=4;newGame();
-  for(let k=0;k<50;k++){const t=addRandom();if(t){if(t.v!==2)only2=false;if(t.v!==4)only4=false;}}}
-eq("spawn4=0 spawns only 2",only2,true);
-spawn4=1; N=4; newGame(); only4=true;
-for(let k=0;k<50;k++){const t=addRandom();if(t&&t.v!==4)only4=false;}
-eq("spawn4=1 spawns only 4",only4,true);
-spawn4=0.25; N=4; newGame();
-let saw2=false,saw4=false;
-for(let k=0;k<400;k++){const g=grid.map(r=>r.slice());const t=addRandom();
-  if(t){if(t.v===2)saw2=true;if(t.v===4)saw4=true;}
-  grid=g;}
-if(!saw2||!saw4)fails.push("spawn4=0.25 should produce both 2 and 4");
-spawn4=0.25;
+// --- spawn-4 probability curve: 10% at start, 35% from max tile 2048 on ---
+N=4;
+function setMax(v){idSeq=1000;score=0;over=false;
+  grid=Array.from({length:N},()=>Array(N).fill(null));grid[0][0]={v,id:++idSeq};}
+setMax(2);    eq("prob max=2",spawnProb(),0.10);
+setMax(64);   eq("prob max=64",spawnProb(),0.10);
+setMax(128);  {const p=spawnProb();if(!(p>0.10&&p<0.35))fails.push("prob at 128 should be between: "+p);}
+setMax(2048); eq("prob max=2048",spawnProb(),0.35);
+setMax(4096); eq("prob clamped at 4096",spawnProb(),0.35);
 
 // --- regression for the old crash bug: gap in front, tiles behind ---
 N=4;

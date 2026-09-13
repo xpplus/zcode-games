@@ -35,7 +35,9 @@
   .t64{background:#f65e3b;color:#fff}.t128{background:#edcf72;color:#fff}
   .t256{background:#edcc61;color:#fff}.t512{background:#edc850;color:#fff}
   .t1024{background:#edc53f;color:#fff}.t2048{background:#edc22e;color:#fff}
-  .super{background:#3c3a32;color:#fff}
+  .t4096{background:#6c5ce7;color:#fff}.t8192{background:#00b894;color:#fff}
+  .t16384{background:#e17055;color:#fff}
+  .super{background:#2d3436;color:#fff}
   #msg { margin-top:12px; color:#776e65; font-size:1rem; min-height:1.5em; }
   #btn { margin-top:4px; font-size:1rem; padding:10px 28px; border:0; border-radius:6px;
          background:#8f7a66; color:#fff; cursor:pointer; }
@@ -47,9 +49,6 @@
 <div class="opts">
   <label>棋盘 <select id="sizeSel">
     <option value="4">4×4</option><option value="5">5×5</option><option value="6">6×6</option>
-  </select></label>
-  <label>出4概率 <select id="probSel">
-    <option value="0.1">低(10%)</option><option value="0.25">中(25%)</option><option value="0.4">高(40%)</option>
   </select></label>
 </div>
 <div class="bar">
@@ -66,12 +65,11 @@
    move() rebuilds each lane line-by-line from the destination wall;
    every cell is written exactly once per move, so grid/DOM can never
    half-update. N and spawn4 are variable: size/spawn rate are user options. */
-let N=4, spawn4=0.25;
+let N=4;
 let grid, score=0, best=0, over=false, idSeq=0;
 try{
   best=+localStorage.getItem("best2048")||0;
   if(+localStorage.getItem("size2048"))N=+localStorage.getItem("size2048");
-  if(localStorage.getItem("prob2048")!==null)spawn4=+localStorage.getItem("prob2048");
 }catch(e){}
 
 function newGame(){
@@ -84,11 +82,19 @@ function emptyCells(){
   for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(!grid[y][x])r.push([x,y]);
   return r;
 }
+// spawn-4 probability ramps from 10% (max tile <= 64) to 35% (max tile >= 2048)
+function spawnProb(){
+  let m=0;
+  for(const r of grid)for(const c of r)if(c&&c.v>m)m=c.v;
+  if(m<=64)return 0.10;
+  const t=(Math.log2(m)-6)/5;              // 64 -> 0, 2048 -> 1
+  return 0.10+0.25*Math.max(0,Math.min(1,t));
+}
 function addRandom(){
   const c=emptyCells();
   if(!c.length)return null;
   const [x,y]=c[Math.random()*c.length|0];
-  const t={v:Math.random()<spawn4?4:2,id:++idSeq};
+  const t={v:Math.random()<spawnProb()?4:2,id:++idSeq};
   grid[y][x]=t;
   return t;
 }
@@ -134,11 +140,10 @@ function checkOver(){
 const board=document.getElementById("board"),
       scoreEl=document.getElementById("score"), bestEl=document.getElementById("best"),
       msgEl=document.getElementById("msg"),
-      sizeSel=document.getElementById("sizeSel"),
-      probSel=document.getElementById("probSel");
+      sizeSel=document.getElementById("sizeSel");
 let tiles=new Map(), cells=[];
 try{
-  sizeSel.value=String(N); probSel.value=String(spawn4);
+  sizeSel.value=String(N);
 }catch(e){}
 bestEl.textContent=best;
 
@@ -164,7 +169,7 @@ function render(){
     live.add(t.id);
     let e=tiles.get(t.id);
     if(!e){e={el:document.createElement("div")};board.appendChild(e.el);tiles.set(t.id,e);}
-    e.el.className="tile "+(t.v<=2048?"t"+t.v:"super");
+    e.el.className="tile "+(t.v<=16384?"t"+t.v:"super");
     e.el.style.width=e.el.style.height=cell+"px";
     e.el.style.fontSize=fs+"px";
     e.el.textContent=t.v;
@@ -185,7 +190,6 @@ function step(dir){
 }
 sizeSel.onchange=()=>{N=+sizeSel.value;try{localStorage.setItem("size2048",N);}catch(e){}
   buildCells();newGame();render();};
-probSel.onchange=()=>{spawn4=+probSel.value;try{localStorage.setItem("prob2048",spawn4);}catch(e){}};
 document.getElementById("btn").onclick=()=>{newGame();render();};
 buildCells();
 newGame();
