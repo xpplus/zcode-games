@@ -13,8 +13,12 @@
                     url("bg.jpg") center/cover no-repeat fixed var(--bg);
          display:flex; flex-direction:column; align-items:center; min-height:100vh;
          user-select:none; }
-  h1 { text-shadow:0 1px 6px rgba(250,248,239,.9); }
-  h1 { font-size:clamp(2rem,8vw,3rem); color:#776e65; margin:12px 0 4px; }
+  h1 { font-size:clamp(1.6rem,7vw,2.6rem); color:#776e65; margin:10px 0 4px;
+       text-shadow:0 1px 6px rgba(250,248,239,.9); }
+  .opts { display:flex; gap:8px; align-items:center; margin:4px 0;
+          font-size:.85rem; color:#776e65; }
+  .opts select { font-size:.85rem; padding:4px 6px; border:1px solid #bbada0;
+                 border-radius:6px; background:rgba(255,255,255,.8); color:#776e65; }
   .bar { display:flex; gap:8px; margin:6px 0 12px; }
   .score { background:#bbada0; color:#fff; border-radius:6px; padding:6px 16px;
            text-align:center; min-width:80px; }
@@ -22,8 +26,7 @@
   .score b { font-size:1.2rem; }
   #board { position:relative; background:rgba(187,173,160,.55); border-radius:8px;
            width:min(92vw,440px); height:min(92vw,440px); }
-  .cell { background:rgba(238,228,218,.5); }
-  .cell { position:absolute; border-radius:6px; background:rgba(238,228,218,.35); }
+  .cell { position:absolute; border-radius:6px; background:rgba(238,228,218,.5); }
   .tile { position:absolute; border-radius:6px; display:flex; align-items:center;
           justify-content:center; font-weight:700; transition:transform .08s ease;
           background:#eee4da; color:#776e65; }
@@ -33,14 +36,22 @@
   .t256{background:#edcc61;color:#fff}.t512{background:#edc850;color:#fff}
   .t1024{background:#edc53f;color:#fff}.t2048{background:#edc22e;color:#fff}
   .super{background:#3c3a32;color:#fff}
-  #msg { margin-top:14px; color:#776e65; font-size:1rem; min-height:1.5em; }
-  #btn { margin-top:6px; font-size:1rem; padding:10px 28px; border:0; border-radius:6px;
+  #msg { margin-top:12px; color:#776e65; font-size:1rem; min-height:1.5em; }
+  #btn { margin-top:4px; font-size:1rem; padding:10px 28px; border:0; border-radius:6px;
          background:#8f7a66; color:#fff; cursor:pointer; }
-  .hint { margin-top:10px; color:#a89f94; font-size:.85rem; }
+  .hint { margin-top:8px; color:#a89f94; font-size:.85rem; }
 </style>
 </head>
 <body>
 <h1>2048</h1>
+<div class="opts">
+  <label>棋盘 <select id="sizeSel">
+    <option value="4">4×4</option><option value="5">5×5</option><option value="6">6×6</option>
+  </select></label>
+  <label>出4概率 <select id="probSel">
+    <option value="0.1">低(10%)</option><option value="0.25">中(25%)</option><option value="0.4">高(40%)</option>
+  </select></label>
+</div>
 <div class="bar">
   <div class="score"><small>分数</small><b id="score">0</b></div>
   <div class="score"><small>最高</small><b id="best">0</b></div>
@@ -54,10 +65,14 @@
 /* ---- pure game state: grid[y][x] = null | {v, id} ----
    move() rebuilds each lane line-by-line from the destination wall;
    every cell is written exactly once per move, so grid/DOM can never
-   half-update. */
-const N=4;
+   half-update. N and spawn4 are variable: size/spawn rate are user options. */
+let N=4, spawn4=0.25;
 let grid, score=0, best=0, over=false, idSeq=0;
-try{best=+localStorage.getItem("best2048")||0;}catch(e){}
+try{
+  best=+localStorage.getItem("best2048")||0;
+  if(+localStorage.getItem("size2048"))N=+localStorage.getItem("size2048");
+  if(localStorage.getItem("prob2048")!==null)spawn4=+localStorage.getItem("prob2048");
+}catch(e){}
 
 function newGame(){
   grid=Array.from({length:N},()=>Array(N).fill(null));
@@ -73,7 +88,7 @@ function addRandom(){
   const c=emptyCells();
   if(!c.length)return null;
   const [x,y]=c[Math.random()*c.length|0];
-  const t={v:Math.random()<0.9?2:4,id:++idSeq};
+  const t={v:Math.random()<spawn4?4:2,id:++idSeq};
   grid[y][x]=t;
   return t;
 }
@@ -118,18 +133,26 @@ function checkOver(){
 /* ---- DOM layer ---- */
 const board=document.getElementById("board"),
       scoreEl=document.getElementById("score"), bestEl=document.getElementById("best"),
-      msgEl=document.getElementById("msg");
-let tiles=new Map();
+      msgEl=document.getElementById("msg"),
+      sizeSel=document.getElementById("sizeSel"),
+      probSel=document.getElementById("probSel");
+let tiles=new Map(), cells=[];
+try{
+  sizeSel.value=String(N); probSel.value=String(spawn4);
+}catch(e){}
 bestEl.textContent=best;
 
 // empty-cell slots behind the tiles so gaps and holes read as distinct
-const cells=[];
-for(let i=0;i<N*N;i++){
-  const el=document.createElement("div");
-  el.className="cell"; board.appendChild(el); cells.push(el);
+function buildCells(){
+  board.innerHTML=""; tiles=new Map(); cells=[];
+  for(let i=0;i<N*N;i++){
+    const el=document.createElement("div");
+    el.className="cell"; board.appendChild(el); cells.push(el);
+  }
 }
 function render(){
   const size=board.clientWidth||300, gap=size/(N+1)/1.8, cell=(size-gap*(N+1))/N;
+  const fs=cell*(N<=4?0.42:N===5?0.34:0.3);
   cells.forEach((el,i)=>{
     const x=i%N, y=i/N|0;
     el.style.width=el.style.height=cell+"px";
@@ -143,7 +166,7 @@ function render(){
     if(!e){e={el:document.createElement("div")};board.appendChild(e.el);tiles.set(t.id,e);}
     e.el.className="tile "+(t.v<=2048?"t"+t.v:"super");
     e.el.style.width=e.el.style.height=cell+"px";
-    e.el.style.fontSize=(cell*0.42)+"px";
+    e.el.style.fontSize=fs+"px";
     e.el.textContent=t.v;
     e.el.style.transform=`translate(${gap+x*(cell+gap)}px,${gap+y*(cell+gap)}px)`;
   }
@@ -158,9 +181,13 @@ function step(dir){
   for(const id of r.drops){const d=tiles.get(id);if(d){d.el.remove();tiles.delete(id);}}
   addRandom();
   render();
-  if(checkOver()){over=true;$("msg").textContent="游戏结束！点新游戏再来";}
+  if(checkOver()){over=true;msgEl.textContent="游戏结束！点新游戏再来";}
 }
-const $=id=>document.getElementById(id);
+sizeSel.onchange=()=>{N=+sizeSel.value;try{localStorage.setItem("size2048",N);}catch(e){}
+  buildCells();newGame();render();};
+probSel.onchange=()=>{spawn4=+probSel.value;try{localStorage.setItem("prob2048",spawn4);}catch(e){}};
+document.getElementById("btn").onclick=()=>{newGame();render();};
+buildCells();
 newGame();
 render();
 
@@ -171,7 +198,7 @@ addEventListener("keydown",e=>{
 });
 let sx=0,sy=0,swiping=false;
 addEventListener("touchstart",e=>{
-  if(e.target.closest("button"))return;
+  if(e.target.closest("button,select"))return;
   sx=e.touches[0].clientX;sy=e.touches[0].clientY;swiping=true;e.preventDefault();
 },{passive:false});
 addEventListener("touchmove",e=>e.preventDefault(),{passive:false});
@@ -182,7 +209,6 @@ addEventListener("touchend",e=>{
   step(Math.abs(dx)>Math.abs(dy)?(dx>0?1:3):(dy>0?2:0));
 });
 addEventListener("touchcancel",()=>{swiping=false;});
-document.getElementById("btn").onclick=()=>{newGame();render();};
 addEventListener("resize",render);
 </script>
 </body>
