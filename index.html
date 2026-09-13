@@ -41,6 +41,12 @@
   #msg { margin-top:12px; color:#776e65; font-size:1rem; min-height:1.5em; }
   #btn { margin-top:4px; font-size:1rem; padding:10px 28px; border:0; border-radius:6px;
          background:#8f7a66; color:#fff; cursor:pointer; }
+  .dpad { display:grid; grid-template-columns:repeat(3,58px); grid-auto-rows:58px;
+          gap:6px; margin-top:12px; }
+  .dpad button { font-size:1.3rem; border:0; border-radius:8px; background:#8f7a66;
+                 color:#fff; cursor:pointer; touch-action:manipulation; }
+  .dpad button:active { background:#6f5d4e; }
+  .dpad .blank { visibility:hidden; }
   .hint { margin-top:8px; color:#a89f94; font-size:.85rem; }
 </style>
 </head>
@@ -58,6 +64,10 @@
 <div id="board"></div>
 <div id="msg"></div>
 <button id="btn">新游戏</button>
+<div class="dpad" id="dpad">
+  <span class="blank"></span><button data-dir="0">▲</button><span class="blank"></span>
+  <button data-dir="3">◀</button><button data-dir="2">▼</button><button data-dir="1">▶</button>
+</div>
 <div class="hint">滑动或用方向键移动方块</div>
 <script>
 "use strict";
@@ -191,6 +201,9 @@ function step(dir){
 sizeSel.onchange=()=>{N=+sizeSel.value;try{localStorage.setItem("size2048",N);}catch(e){}
   buildCells();newGame();render();};
 document.getElementById("btn").onclick=()=>{newGame();render();};
+document.querySelectorAll("#dpad button[data-dir]").forEach(b=>{
+  b.addEventListener("click",()=>step(+b.dataset.dir));
+});
 buildCells();
 newGame();
 render();
