@@ -84,14 +84,6 @@ function merge(a,b){
   Body.setVelocity(nf,{x:(Math.random()-.5),y:-2});
   score+=(lv+1)*3;
 }
-Events.on(engine,"collisionStart",e=>{
-  for(const p of e.pairs){
-    const a=p.bodyA, b=p.bodyB;
-    if(a.plugin&&b.plugin&&a.plugin.lv===b.plugin.lv&&!a.plugin.dead&&!b.plugin.dead){
-      a.plugin.dead=b.plugin.dead=true; merge(a,b);
-    }
-  }
-});
 function launch(vx,vy){
   const f=makeFruit(curLv,W/2,H-60);
   Body.setVelocity(f,{x:vx,y:vy});
@@ -195,6 +187,14 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 newGame();
+Events.on(engine,"collisionStart",e=>{
+  for(const p of e.pairs){
+    const a=p.bodyA, b=p.bodyB;
+    if(a.plugin&&b.plugin&&a.plugin.lv===b.plugin.lv&&!a.plugin.dead&&!b.plugin.dead){
+      a.plugin.dead=b.plugin.dead=true; merge(a,b);
+    }
+  }
+});
 requestAnimationFrame(loop);
 </script>
 </body>

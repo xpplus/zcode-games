@@ -66,20 +66,6 @@ function throwStone(x,y,vx,vy,from){
   Body.setVelocity(b,{x:vx,y:vy});
   stones.push(b); World.add(engine.world,b);
 }
-Events.on(engine,"collisionStart",e=>{
-  if(flyTimer<=0||hitDone)return;
-  for(const p of e.pairs){
-    for(const b of [p.bodyA,p.bodyB]){
-      const st=b.plugin&&b.plugin.from?b:null;
-      if(!st)continue;
-      const other=st===p.bodyA?p.bodyB:p.bodyA;
-      if(other===undefined)continue;
-      // characters are identified by position proximity
-      if(turn==="player"&&hitNear(other,AI)){hitDone=true;ahp--;pop(AI.x,AI.y,"#ff7675",16);endFly(0.9);}
-      else if(turn==="ai"&&hitNear(other,PLAYER)){hitDone=true;php--;pop(PLAYER.x,PLAYER.y,"#ff7675",16);endFly(0.9);}
-    }
-  }
-});
 function hitNear(b,who){
   return Math.hypot(b.position.x-who.x,b.position.y-who.y)<30;
 }
@@ -219,6 +205,19 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 newGame();
+Events.on(engine,"collisionStart",e=>{
+  if(flyTimer<=0||hitDone)return;
+  for(const p of e.pairs){
+    for(const b of [p.bodyA,p.bodyB]){
+      const st=b.plugin&&b.plugin.from?b:null;
+      if(!st)continue;
+      const other=st===p.bodyA?p.bodyB:p.bodyA;
+      // characters are identified by position proximity
+      if(turn==="player"&&hitNear(other,AI)){hitDone=true;ahp--;pop(AI.x,AI.y,"#ff7675",16);endFly(0.9);}
+      else if(turn==="ai"&&hitNear(other,PLAYER)){hitDone=true;php--;pop(PLAYER.x,PLAYER.y,"#ff7675",16);endFly(0.9);}
+    }
+  }
+});
 requestAnimationFrame(loop);
 </script>
 </body>

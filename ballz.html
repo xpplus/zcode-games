@@ -94,26 +94,6 @@ function fireOne(vx,vy){
   Body.setVelocity(b,{x:vx,y:vy});
   balls.push(b); World.add(engine.world,b);
 }
-Events.on(engine,"collisionStart",e=>{
-  for(const p of e.pairs){
-    const [a,b]=[p.bodyA,p.bodyB];
-    const ball=a.plugin&&a.plugin.ball?a:b.plugin&&b.plugin.ball?b:null;
-    if(!ball)continue;
-    const other=ball===a?b:a;
-    if(other.plugin&&other.plugin.hp!==undefined&&other.plugin.hp>0){
-      other.plugin.hp--;
-      if(other.plugin.hp<=0){
-        score++;
-        World.remove(engine.world,other);
-        bricks=bricks.filter(x=>x!==other);
-      }
-    }
-    if(other.plugin&&other.plugin.power){
-      volley++; World.remove(engine.world,other);
-      powers=powers.filter(x=>x!==other);
-    }
-  }
-});
 function aimVec(){
   const dx=aimEnd.x-aimStart.x, dy=aimEnd.y-aimStart.y;
   const len=Math.hypot(dx,dy);
@@ -206,6 +186,26 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 newGame();
+Events.on(engine,"collisionStart",e=>{
+  for(const p of e.pairs){
+    const [a,b]=[p.bodyA,p.bodyB];
+    const ball=a.plugin&&a.plugin.ball?a:b.plugin&&b.plugin.ball?b:null;
+    if(!ball)continue;
+    const other=ball===a?b:a;
+    if(other.plugin&&other.plugin.hp!==undefined&&other.plugin.hp>0){
+      other.plugin.hp--;
+      if(other.plugin.hp<=0){
+        score++;
+        World.remove(engine.world,other);
+        bricks=bricks.filter(x=>x!==other);
+      }
+    }
+    if(other.plugin&&other.plugin.power){
+      volley++; World.remove(engine.world,other);
+      powers=powers.filter(x=>x!==other);
+    }
+  }
+});
 requestAnimationFrame(loop);
 </script>
 </body>

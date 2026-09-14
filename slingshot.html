@@ -82,20 +82,6 @@ function fire(vx,vy){
   balls.push(loaded); loaded=null; shots++;
   setTimeout(load,700);
 }
-Events.on(engine,"collisionStart",e=>{
-  for(const p of e.pairs){
-    for(const b of [p.bodyA,p.bodyB]){
-      if(b.plugin&&b.plugin.kind==="target"&&!b.plugin.dead){
-        const hit=Math.max(p.collision.depth,0);
-        b.plugin.hp=(b.plugin.hp||0)+1;
-        // targets topple easily: any solid hit or falling off kills them
-        if(b.plugin.hp>=1&&b.speed>1.2)kill(b);
-        if(b.position.y>GROUND+20)kill(b);
-      }
-      if(b.plugin&&b.plugin.kind==="crown"&&!b.plugin.dead&&b.position.y>GROUND+20)kill(b);
-    }
-  }
-});
 function kill(b){
   b.plugin.dead=true;
   World.remove(engine.world,b);
@@ -195,6 +181,19 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 buildLevel(0);
+Events.on(engine,"collisionStart",e=>{
+  for(const p of e.pairs){
+    for(const b of [p.bodyA,p.bodyB]){
+      if(b.plugin&&b.plugin.kind==="target"&&!b.plugin.dead){
+        b.plugin.hp=(b.plugin.hp||0)+1;
+        // targets topple easily: any solid hit or falling off kills them
+        if(b.plugin.hp>=1&&b.speed>1.2)kill(b);
+        if(b.position.y>GROUND+20)kill(b);
+      }
+      if(b.plugin&&b.plugin.kind==="crown"&&!b.plugin.dead&&b.position.y>GROUND+20)kill(b);
+    }
+  }
+});
 requestAnimationFrame(loop);
 </script>
 </body>

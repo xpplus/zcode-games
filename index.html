@@ -55,6 +55,12 @@
 </head>
 <body>
 <h1>2048</h1>
+<div class="games" style="margin-top:4px">
+  <a href="fling.html">🍉 弹射合成</a>
+  <a href="slingshot.html">🎯 弹弓拆塔</a>
+  <a href="ballz.html">⚽ 弹球爬塔</a>
+  <a href="cliff.html">🪨 悬崖对决</a>
+</div>
 <div class="opts">
   <label>棋盘 <select id="sizeSel">
     <option value="4">4×4</option><option value="5">5×5</option><option value="6">6×6</option>
@@ -72,12 +78,6 @@
   <button data-dir="3">◀</button><button data-dir="2">▼</button><button data-dir="1">▶</button>
 </div>
 <div class="hint">滑动或用方向键移动方块</div>
-<div class="games">
-  <a href="fling.html">🍉 弹射合成</a>
-  <a href="slingshot.html">🎯 弹弓拆塔</a>
-  <a href="ballz.html">⚽ 弹球爬塔</a>
-  <a href="cliff.html">🪨 悬崖对决</a>
-</div>
 <script>
 "use strict";
 /* ---- pure game state: grid[y][x] = null | {v, id} ----
