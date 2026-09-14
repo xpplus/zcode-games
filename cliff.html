@@ -114,10 +114,10 @@ cv.addEventListener("mouseup",()=>{
   flyTimer=0.01; hitDone=false;
 });
 function aiThrow(){
-  const dx=PLAYER.x-AI.x, dy=PLAYER.y-AI.y, t=0.9;
-  const g=0.278*60;                       // px per step^2 scaled to seconds
-  let vx=dx/t, vy=dy/t-0.5*g*t;
-  vx*=0.8+Math.random()*0.45;             // sloppy aim on purpose
+  const dx=PLAYER.x-AI.x, dy=PLAYER.y-AI.y, steps=54;   // ~0.9s of flight
+  const g=0.278;                                        // px per step^2
+  let vx=dx/steps, vy=(dy-0.5*g*steps*steps)/steps;
+  vx*=0.8+Math.random()*0.45;                           // sloppy aim on purpose
   vy*=0.85+Math.random()*0.4;
   throwStone(AI.x,AI.y,vx,vy,"ai");
   flyTimer=0.01; hitDone=false;
