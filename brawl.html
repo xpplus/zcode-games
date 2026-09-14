@@ -219,12 +219,13 @@ cv.addEventListener("touchend",e=>{
   }
 });
 addEventListener("keydown",e=>{
-  keys[e.key]=true;
-  if(e.key===" "){ e.preventDefault(); if(!charging)startCharge(); }
+  keys[e.key]=true; if(e.code)keys[e.code]=true;    // e.code survives IME interception
+  if(e.key===" "||e.code==="Space"){ e.preventDefault(); if(!charging)startCharge(); }
+  if((e.key||"").startsWith("Arrow")||(e.code||"").startsWith("Arrow"))e.preventDefault();
 });
 addEventListener("keyup",e=>{
-  keys[e.key]=false;
-  if(e.key===" ")releaseThrow();
+  keys[e.key]=false; if(e.code)keys[e.code]=false;
+  if(e.key===" "||e.code==="Space")releaseThrow();
 });
 cv.addEventListener("mousedown",e=>{
   if(over){newGame();return;}
@@ -244,10 +245,11 @@ function update(dt){
     if(c.cool>0)c.cool-=dt;
     if(c.isAI)aiStep(c,dt);
     else if(!joy){
-      c.vx=(keys.ArrowRight||keys.d?2.2:0)-(keys.ArrowLeft||keys.a?2.2:0);
-      c.vy=(keys.ArrowDown||keys.s?2.2:0)-(keys.ArrowUp||keys.w?2.2:0);
+      c.vx=((keys.ArrowRight||keys.KeyRight||keys.d||keys.KeyD)?2.2:0)-((keys.ArrowLeft||keys.KeyLeft||keys.a||keys.KeyA)?2.2:0);
+      c.vy=((keys.ArrowDown||keys.KeyDown||keys.s||keys.KeyS)?2.2:0)-((keys.ArrowUp||keys.KeyUp||keys.w||keys.KeyW)?2.2:0);
     }else{ c.vx=joyVX*2.4; c.vy=joyVY*2.4; }
     if(c.stun<=0){
+      c.x+=c.vx; c.y+=c.vy;
       const moved=collideWorld(c);
       const want=Math.hypot(c.vx,c.vy);
       if(want>0.1){
