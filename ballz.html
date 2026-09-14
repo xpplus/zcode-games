@@ -52,20 +52,23 @@ function newGame(){
     Bodies.rectangle(-30,H/2,60,H*3,{isStatic:true}),
     Bodies.rectangle(W+30,H/2,60,H*3,{isStatic:true})
   ]);
-  addRow();
+  addRow(-ROWH/2);
+  addRow(ROWH*1.5);          // some tower already on screen at the start
+  addRow(ROWH*1.5+ROWH);
   overEl.style.display="none";
 }
-function addRow(){
+function addRow(y0){
+  const top = y0===undefined ? -ROWH/2 : y0;
   const hpBase=rowsDown+1;
   for(let c=0;c<COLS;c++){
     if(Math.random()<0.18)continue;                     // gaps keep it easy
     const x=15+BW*(c+0.5);
     const hp=1+Math.random()*Math.min(9,hpBase)|0;
-    const b=Bodies.rectangle(x,-ROWH/2-(rowsDown%2)*0,BW-6,ROWH,{isStatic:true});
+    const b=Bodies.rectangle(x,top,BW-6,ROWH,{isStatic:true});
     b.plugin={hp:Math.max(1,hp)};
     bricks.push(b); World.add(engine.world,b);
   }
-  if(Math.random()<0.35){
+  if(y0===undefined&&Math.random()<0.35){
     const c=Math.random()*COLS|0;
     const p=Bodies.circle(15+BW*(c+0.5),-ROWH/2,11,{isStatic:true,isSensor:true});
     p.plugin={power:true};
@@ -98,7 +101,7 @@ function aimVec(){
   const dx=aimEnd.x-aimStart.x, dy=aimEnd.y-aimStart.y;
   const len=Math.hypot(dx,dy);
   if(len<15)return null;
-  const k=Math.min(13,len*0.06)/len;
+  const k=Math.min(22,len*0.11)/len;
   return {x:dx*k,y:dy*k};
 }
 cv.addEventListener("touchstart",e=>{

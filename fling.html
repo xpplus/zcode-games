@@ -24,8 +24,8 @@
 <script src="matter.min.js"></script>
 <script>
 "use strict";
-const {Engine,World,Bodies,Body,Events,Composite} = Matter;
-const W=420, H=700, DANGER=130;
+const {Engine,World,Bodies,Body,Events} = Matter;
+const W=420, H=700, DANGER=170, GUN={x:W/2, y:80};
 const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
 const overEl=document.getElementById("over"), finalEl=document.getElementById("final");
 function fit(){
@@ -64,6 +64,9 @@ function newGame(){
     Bodies.rectangle(-30,H/2,60,H+400,wallOpt),
     Bodies.rectangle(W+30,H/2,60,H+400,wallOpt)
   ]);
+  // starter fruits so the field never looks empty at the beginning
+  makeFruit(Math.random()*2|0, W*0.32, H-90);
+  makeFruit(Math.random()*2|0, W*0.68, H-120);
   curLv=Math.random()*3|0; nextLv=Math.random()*4|0;
   overEl.style.display="none";
 }
@@ -85,7 +88,7 @@ function merge(a,b){
   score+=(lv+1)*3;
 }
 function launch(vx,vy){
-  const f=makeFruit(curLv,W/2,H-60);
+  const f=makeFruit(curLv,GUN.x,GUN.y+30);
   Body.setVelocity(f,{x:vx,y:vy});
   curLv=nextLv; nextLv=Math.random()*5|0;
 }
@@ -100,37 +103,36 @@ function dangerCheck(dt){
     overEl.style.display="flex";
   }
 }
-// input: drag anywhere = aim & fling
+// input: drag anywhere = pull back & fling from the top cannon
 function toWorld(t){
   const r=cv.getBoundingClientRect(), s=W/r.width;
   return {x:(t.clientX-r.left)*s, y:(t.clientY-r.top)*s};
+}
+function aimVec(){
+  const dx=aimStart.x-aimEnd.x, dy=aimStart.y-aimEnd.y;
+  const len=Math.hypot(dx,dy);
+  if(len<20)return null;
+  const k=Math.min(14,len*0.075)/len;
+  return {x:dx*k,y:dy*k};
 }
 cv.addEventListener("touchstart",e=>{ if(over){newGame();return;}
   aiming=true; aimStart=toWorld(e.touches[0]); aimEnd=aimStart; e.preventDefault(); },{passive:false});
 cv.addEventListener("touchmove",e=>{ if(aiming) aimEnd=toWorld(e.touches[0]); e.preventDefault(); },{passive:false});
 cv.addEventListener("touchend",e=>{
   if(!aiming)return; aiming=false;
-  const dx=aimStart.x-aimEnd.x, dy=aimStart.y-aimEnd.y;
-  const len=Math.hypot(dx,dy);
-  if(len<20)return;
-  const k=Math.min(14,len*0.075)/len;
-  launch(dx*k,dy*k);
+  const v=aimVec(); if(!v)return;
+  launch(v.x,v.y);
 });
-// mouse support
 cv.addEventListener("mousedown",e=>{ if(over){newGame();return;} aiming=true; aimStart={x:e.offsetX,y:e.offsetY}; aimEnd=aimStart; });
 cv.addEventListener("mousemove",e=>{ if(aiming) aimEnd={x:e.offsetX,y:e.offsetY}; });
-cv.addEventListener("mouseup",e=>{
+cv.addEventListener("mouseup",()=>{
   if(!aiming)return; aiming=false;
-  const dx=aimStart.x-aimEnd.x, dy=aimStart.y-aimEnd.y, len=Math.hypot(dx,dy);
-  if(len<20)return;
-  const k=Math.min(14,len*0.075)/len;
-  launch(dx*k,dy*k);
+  const v=aimVec(); if(!v)return;
+  launch(v.x,v.y);
 });
 function drawPreview(){
-  const dx=aimStart.x-aimEnd.x, dy=aimStart.y-aimEnd.y, len=Math.hypot(dx,dy);
-  if(len<20)return;
-  const k=Math.min(14,len*0.075)/len;
-  let px=W/2, py=H-60, vx=dx*k, vy=dy*k;
+  const v=aimVec(); if(!v)return;
+  let px=GUN.x, py=GUN.y+30, vx=v.x, vy=v.y;
   ctx.fillStyle="rgba(255,255,255,.5)";
   for(let i=0;i<36;i++){
     vy+=0.278; px+=vx; py+=vy;
@@ -156,22 +158,23 @@ function render(dt){
     ctx.arc(p.x,p.y,3.5*p.life,0,7); ctx.fillStyle=p.color; ctx.fill();
     ctx.globalAlpha=1;
   }
-  // launcher: current + next
+  // top cannon: mount + current fruit, next fruit preview beside it
+  ctx.fillStyle="#8f7a66"; ctx.fillRect(GUN.x-26,GUN.y-34,52,20);
+  ctx.fillStyle="#6f5d4e"; ctx.fillRect(GUN.x-8,GUN.y-16,16,16);
   const [rc,ec]=FRUITS[curLv], [rn,en]=FRUITS[nextLv];
-  ctx.beginPath(); ctx.arc(W/2,H-60,rc,0,7); ctx.fillStyle=rc==="#e74c3c"?"#e74c3c":rc; ctx.globalAlpha=.85;
-  ctx.fill(); ctx.globalAlpha=1;
+  ctx.beginPath(); ctx.arc(GUN.x,GUN.y+30,rc,0,7); ctx.fillStyle=rc; ctx.fill();
   ctx.font=(rc*1.15)+"px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-  ctx.fillText(ec,W/2,H-60);
-  ctx.font="20px serif"; ctx.fillText(en,W/2+rc+34,H-60);
+  ctx.fillText(ec,GUN.x,GUN.y+30);
+  ctx.font="20px serif"; ctx.fillText(en,GUN.x+rc+36,GUN.y+30);
   ctx.font="15px sans-serif"; ctx.fillStyle="#fff";
-  ctx.textAlign="left"; ctx.fillText("分数 "+score+"  最高 "+best,14,26);
+  ctx.textAlign="left"; ctx.fillText("分数 "+score+"  最高 "+best,14,150);
   if(aiming)drawPreview();
   // first-use hint
   idle+=dt;
-  if(idle<6&&!aiming&&fruits.length<2){
+  if(idle<6&&!aiming&&fruits.length<=2){
     ctx.globalAlpha=.5+0.4*Math.sin(idle*4);
     ctx.font="15px sans-serif"; ctx.fillStyle="#fff"; ctx.textAlign="center";
-    ctx.fillText("按住并拖动，松手发射",W/2,H-130);
+    ctx.fillText("按住并拖动，松手向下发射",W/2,H-60);
     ctx.globalAlpha=1;
   }
 }

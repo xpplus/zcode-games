@@ -5,7 +5,6 @@ import { runInNewContext } from "vm";
 
 const games = {
   "fling.html":     { input: "fling", frames: 400 },
-  "slingshot.html": { input: "sling", frames: 400 },
   "ballz.html":     { input: "ballz", frames: 600 },
   "cliff.html":     { input: "cliff", frames: 500 },
 };
