@@ -23,9 +23,11 @@
 </div>
 <script>
 "use strict";
-/* 道具投掷大乱斗 demo：俯视角跑位，捡道具扔人。
-   命中 = 扣血 + 僵直 + 击退，随后闪烁无敌。道具砸碎后定时在新刷新点重生。 */
-const W=420, H=700;
+/* 道具投掷大乱斗 demo。
+   操作：全屏摇杆跑动；右下角"扔"按钮按住蓄力（电脑按住空格），松手朝前进方向扔出，
+   蓄力越久扔得越远。命中 = 扣血 + 僵直0.5s + 无敌1.5s（同时开始）+ 击退，不分敌友。
+   道具砸碎后定时在新刷新点重生。AI 会捡道具、瞄准投掷、避障转向。 */
+const W=420, H=700, WALL=14;
 const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
 const overEl=document.getElementById("over"), otext=document.getElementById("otext");
 function fit(){
@@ -36,11 +38,9 @@ function fit(){
 }
 addEventListener("resize",fit); fit();
 
-/* ---- map: border + cute obstacles (AABB) ---- */
-const WALL=14;
 const OBST=[
-  {x:W/2-34,y:H/2-30,w:68,h:52,kind:"table"},      // central round table
-  {x:W/2-72,y:H/2+8,w:30,h:30,kind:"stool"},       // stools around it
+  {x:W/2-34,y:H/2-30,w:68,h:52,kind:"table"},
+  {x:W/2-72,y:H/2+8,w:30,h:30,kind:"stool"},
   {x:W/2+44,y:H/2-24,w:30,h:30,kind:"stool"},
   {x:34,y:120,w:52,h:40,kind:"box"},{x:96,y:126,w:36,h:34,kind:"box"},
   {x:330,y:150,w:46,h:42,kind:"box"},
@@ -50,21 +50,23 @@ const OBST=[
   {x:270,y:60,w:56,h:26,kind:"bench"},
   {x:96,y:330,w:30,h:30,kind:"stool"},
 ];
-/* ---- item spawn points (kept clear of obstacles) ---- */
 const SPAWNS=[[60,80],[350,80],[190,150],[60,240],[350,260],[190,300],[60,420],[350,430],[190,460],[190,560],[60,620],[350,640]];
 const TYPES=[
   {kind:"stone", r:9,  dmg:1, speed:9.5, color:"#aab4be"},
   {kind:"stool", r:11, dmg:1, speed:8.0, color:"#f8a5c2"},
   {kind:"table", r:14, dmg:2, speed:6.5, color:"#c68e5a"},
 ];
-const ITEM_EMOJI={stone:"🪨",stool:"🪑",table:"🪵"};
+const BTN={x:W-56,y:H-58,r:32};                     // throw button (hold to charge)
 
 let chars=[], items=[], flying=[], parts=[], respawn=[],
-    over=false, winner="", last=performance.now(), shakeT=0;
+    over=false, last=performance.now(), shakeT=0,
+    joy=null, joyVX=0, joyVY=0, charging=false, chargeT=0;
+const CHARGE_MAX=1.2;
 
 function makeChar(x,y,em,isAI){
-  return {x,y,r:15,hp:5,em,isAI,vx:0,vy:0,face:em,
-          held:null,stun:0,inv:0,cool:0,aiT:Math.random(),alive:true,bob:Math.random()*6};
+  return {x,y,r:15,hp:5,em,isAI,vx:0,vy:0,fx:0,fy:-1,   // facing dir
+          held:null,stun:0,inv:0,cool:0,alive:true,bob:Math.random()*6,
+          avoid:0,avoidDir:1,aiT:Math.random()*2};
 }
 function freeSpot(){
   const c=SPAWNS.filter(([x,y])=>
@@ -77,30 +79,32 @@ function spawnItem(type){
   items.push({x:s[0],y:s[1],type});
 }
 function newGame(){
-  chars=[];items=[];flying=[];parts=[];respawn=[];over=false;winner="";
+  chars=[];items=[];flying=[];parts=[];respawn=[];over=false;
   chars.push(makeChar(W/2,H-100,"🐱",false));
   chars.push(makeChar(70,80,"🐶",true));
   chars.push(makeChar(W-70,90,"🐷",true));
   chars.push(makeChar(W/2,70,"🐸",true));
   for(let i=0;i<7;i++)spawnItem(TYPES[i%3]);
   overEl.style.display="none";
+  charging=false; chargeT=0; joy=null; joyVX=joyVY=0;
 }
-/* ---- helpers ---- */
-function circleRectPush(c,o){                       // push circle out of AABB
+function circleRectPush(c,o){
   const nx=Math.max(o.x,Math.min(c.x,o.x+o.w)), ny=Math.max(o.y,Math.min(c.y,o.y+o.h));
   const dx=c.x-nx, dy=c.y-ny, d=Math.hypot(dx,dy);
   if(d<c.r&&d>0.001){ c.x=nx+dx/d*c.r; c.y=ny+dy/d*c.r; }
   else if(d<=0.001){ c.y=o.y-c.r; }
 }
 function collideWorld(c){
+  const ox=c.x, oy=c.y;
   c.x=Math.max(WALL+c.r,Math.min(W-WALL-c.r,c.x));
   c.y=Math.max(WALL+c.r,Math.min(H-WALL-c.r,c.y));
   for(const o of OBST)circleRectPush(c,o);
-  for(const ch of chars){                           // soft push between characters
+  for(const ch of chars){
     if(ch===c||!ch.alive)continue;
     const dx=c.x-ch.x, dy=c.y-ch.y, d=Math.hypot(dx,dy);
     if(d<c.r+ch.r&&d>0.001){ const p=(c.r+ch.r-d)/2; c.x+=dx/d*p; c.y+=dy/d*p; }
   }
+  return Math.hypot(c.x-ox,c.y-oy);                  // actual displacement
 }
 function pop(x,y,color,n){
   for(let i=0;i<n;i++){
@@ -108,20 +112,21 @@ function pop(x,y,color,n){
     parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:1,color});
   }
 }
-function throwItem(ch,tx,ty){
+function throwItem(ch,charge){
   const t=TYPES.find(t=>t.kind===ch.held); if(!t)return;
   ch.held=null;
-  const dx=tx-ch.x, dy=ty-ch.y, d=Math.hypot(dx,dy)||1;
-  flying.push({x:ch.x,y:ch.y,z:18,vz:2.6,vx:dx/d*t.speed,vy:dy/d*t.speed,type:t,from:ch});
+  const spd=t.speed*(0.45+0.55*charge);
+  flying.push({x:ch.x,y:ch.y,z:18,vz:2.2+charge*1.2,
+               vx:ch.fx*spd,vy:ch.fy*spd,type:t,from:ch});
   ch.cool=0.5;
 }
 function hitChar(target,by,item){
   if(target.inv>0||!target.alive)return false;
   target.hp-=item.dmg;
-  const kb=item.dmg*2.2;
   const dx=target.x-by.x, dy=target.y-by.y, d=Math.hypot(dx,dy)||1;
-  target.x+=dx/d*kb*2; target.y+=dy/d*kb*2;
-  target.stun=0.9; target.inv=1.6;                  // stagger then protection
+  const kb=6+item.dmg*3;
+  target.x+=dx/d*kb; target.y+=dy/d*kb;
+  target.stun=0.5; target.inv=1.5;                   // stagger + protection together
   pop(target.x,target.y,"#ff7675",12);
   shakeT=0.18;
   if(target.hp<=0){ target.alive=false; pop(target.x,target.y,"#ffe66d",22); }
@@ -131,50 +136,69 @@ function checkWin(){
   if(over)return;
   const alive=chars.filter(c=>c.alive);
   const me=chars[0];
-  if(!me.alive){ over=true; winner="惜败！"; }
-  else if(alive.length===1&&alive[0]===me){ over=true; winner="大乱斗冠军！"; }
-  if(over){ otext.textContent=winner; overEl.style.display="flex"; }
+  if(!me.alive){ over=true; otext.textContent="惜败！"; }
+  else if(alive.length===1&&alive[0]===me){ over=true; otext.textContent="大乱斗冠军！"; }
+  if(over)overEl.style.display="flex";
 }
-/* ---- AI ---- */
+/* ---- AI: seek item -> approach enemy -> throw with lead; avoids obstacles ---- */
 function aiStep(c,dt){
   if(c.stun>0)return;
+  c.cool-=dt;
   if(!c.held){
     let best=null,bd=1e9;
     for(const it of items){ const d=Math.hypot(it.x-c.x,it.y-c.y); if(d<bd){bd=d;best=it;} }
-    if(best){
-      const dx=best.x-c.x, dy=best.y-c.y, d=bd||1;
-      c.vx=dx/d*1.7; c.vy=dy/d*1.7;
-      if(d<20){ c.held=best.type; items.splice(items.indexOf(best),1); }
-    }
+    if(!best)return;
+    steer(c,best.x,best.y,1.9);
+    if(bd<c.r+16){ c.held=best.type; items.splice(items.indexOf(best),1); }
     return;
   }
   let tgt=null,bd=1e9;
   for(const o of chars){ if(o!==c&&o.alive){ const d=Math.hypot(o.x-c.x,o.y-c.y); if(d<bd){bd=d;tgt=o;} } }
   if(!tgt)return;
-  if(bd<250&&c.cool<=0){
-    const tx=tgt.x+tgt.vx*15+(Math.random()-.5)*70;
-    const ty=tgt.y+tgt.vy*15+(Math.random()-.5)*70;
-    if(Math.random()<0.75)throwItem(c,tx,ty);
-    c.cool=1.3+Math.random()*0.8;
+  if(bd<300&&c.cool<=0){
+    // aim with lead + noise, near-full charge
+    const ax=tgt.x+tgt.vx*12-c.x, ay=tgt.y+tgt.vy*12-c.y;
+    const d=Math.hypot(ax,ay)||1, noise=(Math.random()-.5)*0.5;
+    c.fx=(ax/d)*Math.cos(noise)-(ay/d)*Math.sin(noise);
+    c.fy=(ax/d)*Math.sin(noise)+(ay/d)*Math.cos(noise);
+    throwItem(c,0.75+Math.random()*0.25);
+    c.cool=1.6+Math.random()*1.0;
   }else{
-    const dx=tgt.x-c.x, dy=tgt.y-c.y, d=bd||1;
-    const want=bd>170?1:0.3;
-    c.vx=dx/d*1.6*want+(Math.random()-.5)*0.6;
-    c.vy=dy/d*1.6*want+(Math.random()-.5)*0.6;
+    steer(c,tgt.x,tgt.y,bd>180?1.8:0.4);
   }
 }
-/* ---- input: left half joystick, right half swipe = throw ---- */
-let joy=null, joyVX=0, joyVY=0;
+function steer(c,tx,ty,speed){                       // move toward point, strafe if blocked
+  const dx=tx-c.x, dy=ty-c.y, d=Math.hypot(dx,dy)||1;
+  if(c.avoid>0){
+    c.avoid-=1/60;
+    c.vx=(-dy/d)*c.avoidDir*speed;
+    c.vy=( dx/d)*c.avoidDir*speed;
+    return;
+  }
+  c.vx=dx/d*speed; c.vy=dy/d*speed;
+}
+/* ---- input: full-screen joystick + hold-to-charge throw button ---- */
 function toWorld(t){
   const r=cv.getBoundingClientRect(), s=W/r.width;
   return {x:(t.clientX-r.left)*s, y:(t.clientY-r.top)*s};
 }
+function startCharge(){
+  const me=chars[0];
+  if(over||charging)return;
+  if(me.alive&&me.held&&me.stun<=0){ charging=true; chargeT=0; }
+}
+function releaseThrow(){
+  if(!charging)return; charging=false;
+  const me=chars[0];
+  if(me.alive&&me.held&&me.stun<=0)throwItem(me,Math.min(1,chargeT/CHARGE_MAX));
+}
+function inBtn(p){ return Math.hypot(p.x-BTN.x,p.y-BTN.y)<BTN.r+8; }
 cv.addEventListener("touchstart",e=>{
   if(over){newGame();return;}
   for(const t of e.changedTouches){
     const p=toWorld(t);
-    if(p.x<W/2&&!joy){ joy={id:t.identifier,ox:p.x,oy:p.y}; joyVX=joyVY=0; }
-    else{ const me=chars[0]; if(me.alive&&me.held&&me.stun<=0)throwItem(me,p.x,p.y); }
+    if(inBtn(p)){ startCharge(); }
+    else if(!joy){ joy={id:t.identifier,ox:p.x,oy:p.y}; joyVX=joyVY=0; }
   }
   e.preventDefault();
 },{passive:false});
@@ -189,20 +213,30 @@ cv.addEventListener("touchmove",e=>{
   e.preventDefault();
 },{passive:false});
 cv.addEventListener("touchend",e=>{
-  for(const t of e.changedTouches) if(joy&&t.identifier===joy.id){ joy=null; joyVX=joyVY=0; }
+  for(const t of e.changedTouches){
+    if(joy&&t.identifier===joy.id){ joy=null; joyVX=joyVY=0; }
+    else releaseThrow();
+  }
 });
-// desktop: arrows/WASD move, click throws
-const keys={};
-addEventListener("keydown",e=>{keys[e.key]=true;});
-addEventListener("keyup",e=>{keys[e.key]=false;});
+addEventListener("keydown",e=>{
+  keys[e.key]=true;
+  if(e.key===" "){ e.preventDefault(); if(!charging)startCharge(); }
+});
+addEventListener("keyup",e=>{
+  keys[e.key]=false;
+  if(e.key===" ")releaseThrow();
+});
 cv.addEventListener("mousedown",e=>{
   if(over){newGame();return;}
-  const me=chars[0];
-  if(me.alive&&me.held&&me.stun<=0){ const p={x:e.offsetX,y:e.offsetY}; throwItem(me,p.x,p.y); }
+  const p={x:e.offsetX,y:e.offsetY};
+  if(inBtn(p))startCharge();
 });
+cv.addEventListener("mouseup",()=>releaseThrow());
+const keys={};
 /* ---- update ---- */
 function update(dt){
   const me=chars[0];
+  if(charging)chargeT=Math.min(CHARGE_MAX,chargeT+dt);
   for(const c of chars){
     if(!c.alive)continue;
     if(c.stun>0){c.stun-=dt;c.vx=c.vy=0;}
@@ -213,55 +247,52 @@ function update(dt){
       c.vx=(keys.ArrowRight||keys.d?2.2:0)-(keys.ArrowLeft||keys.a?2.2:0);
       c.vy=(keys.ArrowDown||keys.s?2.2:0)-(keys.ArrowUp||keys.w?2.2:0);
     }else{ c.vx=joyVX*2.4; c.vy=joyVY*2.4; }
-    if(c.stun<=0){ c.x+=c.vx; c.y+=c.vy; collideWorld(c); }
-    if(!c.held&&c.stun<=0){                            // walk over items to pick up
+    if(c.stun<=0){
+      const moved=collideWorld(c);
+      const want=Math.hypot(c.vx,c.vy);
+      if(want>0.1){
+        if(c.isAI&&moved<want*0.35){                   // blocked: strafe a while
+          c.avoid=0.55; c.avoidDir=Math.random()<0.5?1:-1;
+        }
+        c.fx=c.vx/want; c.fy=c.vy/want;                // facing = move direction
+      }
+    }
+    if(!c.held&&c.stun<=0){
       for(const it of items){
-        if(Math.hypot(it.x-c.x,it.y-c.y)<c.r+12){ c.held=it.type; items.splice(items.indexOf(it),1); break; }
+        if(Math.hypot(it.x-c.x,it.y-c.y)<c.r+14){ c.held=it.type; items.splice(items.indexOf(it),1); break; }
       }
     }
     c.bob+=dt*10;
   }
-  // flying items
   for(const f of flying){
     f.x+=f.vx; f.y+=f.vy; f.z+=f.vz; f.vz-=0.22;
-    if(f.z<=0){                                        // landed: break
-      pop(f.x,f.y,f.type.color,8);
-      respawn.push({t:5,point:null});
-      f.dead=true; continue;
+    if(f.z<=0){ pop(f.x,f.y,f.type.color,8); respawn.push({t:5}); f.dead=true; continue; }
+    if(f.x<WALL||f.x>W-WALL||f.y<WALL||f.y>H-WALL){
+      pop(f.x,f.y,f.type.color,6); f.dead=true; respawn.push({t:5}); continue;
     }
-    if(f.x<WALL||f.x>W-WALL||f.y<WALL||f.y>H-WALL){    // hit wall
-      pop(f.x,f.y,f.type.color,6); f.dead=true;
-      respawn.push({t:5,point:null}); continue;
-    }
-    if(f.z<34){                                        // below head height: can hit
+    if(f.z<34){
+      let broke=false;
       for(const o of OBST){
         if(f.x>o.x-4&&f.x<o.x+o.w+4&&f.y>o.y-4&&f.y<o.y+o.h+4){
-          pop(f.x,f.y,f.type.color,6); f.dead=true; respawn.push({t:5,point:null}); break;
+          pop(f.x,f.y,f.type.color,6); broke=true; break;
         }
       }
-      if(f.dead)continue;
-      for(const c of chars){
-        if(!c.alive||c===f.from)continue;
+      if(!broke)for(const c of chars){
+        if(!c.alive||c===f.from)continue;              // hits anyone except the thrower
         if(Math.hypot(c.x-f.x,c.y-f.y)<c.r+f.type.r+4){
-          hitChar(c,f.from,f.type); f.dead=true;
-          respawn.push({t:5,point:null}); break;
+          hitChar(c,f.from,f.type); broke=true; break;
         }
       }
+      if(broke){ f.dead=true; respawn.push({t:5}); }
     }
   }
   flying=flying.filter(f=>!f.dead);
-  // item respawn: thrown/broken items come back after ~5s
   for(const r of respawn){
     r.t-=dt;
-    if(r.t<=0){
-      const t=TYPES[Math.random()*TYPES.length|0];
-      spawnItem(t);
-      r.done=true;
-    }
+    if(r.t<=0){ spawnItem(TYPES[Math.random()*TYPES.length|0]); r.done=true; }
   }
   respawn=respawn.filter(r=>!r.done);
-  // keep the arena stocked
-  if(items.length<5&&respawn.length<3)respawn.push({t:2,point:null});
+  if(items.length<5&&respawn.length<3)respawn.push({t:2});
   for(const p of parts){p.x+=p.vx;p.y+=p.vy;p.vy+=.1;p.life-=.04;}
   parts=parts.filter(p=>p.life>0);
   if(shakeT>0)shakeT-=dt;
@@ -294,7 +325,6 @@ function drawItem(it,x,y,scale){
     ctx.fillStyle="#fbc4d8"; ctx.beginPath(); ctx.arc(x,y-2*scale,t.r*0.65*scale,0,7); ctx.fill(); }
   else{ ctx.beginPath(); ctx.ellipse(x,y,t.r*scale,t.r*0.7*scale,0,0,7); ctx.fill();
     ctx.fillStyle="#dba36b"; ctx.beginPath(); ctx.ellipse(x,y-2*scale,t.r*0.6*scale,t.r*0.4*scale,0,0,7); ctx.fill(); }
-  // cute face
   if(scale>0.8){
     ctx.fillStyle="#3c3a45";
     ctx.beginPath(); ctx.arc(x-t.r*0.3*scale,y-1,t.r*0.09*scale+0.8,0,7); ctx.fill();
@@ -305,20 +335,16 @@ function drawItem(it,x,y,scale){
 }
 function drawChar(c){
   const bob=c.stun>0?0:Math.abs(Math.sin(c.bob))*3;
-  // shadow
   ctx.fillStyle="rgba(30,40,40,.28)";
   ctx.beginPath(); ctx.ellipse(c.x,c.y+c.r*0.8,c.r*0.9,c.r*0.42,0,0,7); ctx.fill();
   if(c.inv>0&&Math.floor(c.inv*10)%2===0)return;     // blink during protection
-  // body
   ctx.fillStyle=c.isAI?"#fff3e0":"#e3f2fd";
   ctx.beginPath(); ctx.arc(c.x,c.y-bob,c.r+3,0,7); ctx.fill();
   ctx.strokeStyle=c.isAI?"#ffd180":"#90caf9"; ctx.lineWidth=2.5;
   ctx.beginPath(); ctx.arc(c.x,c.y-bob,c.r+3,0,7); ctx.stroke();
   ctx.font="22px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
   ctx.fillText(c.em,c.x,c.y-bob);
-  // held item above head
   if(c.held)drawItem({type:c.held},c.x,c.y-bob-c.r-16,0.8);
-  // hp hearts
   ctx.font="11px serif"; ctx.textAlign="left";
   for(let i=0;i<5;i++)ctx.fillText(i<c.hp?"❤":"🖤",c.x-c.r-2+i*12,c.y-bob-c.r-(c.held?30:14));
   if(c.stun>0){ ctx.font="13px serif"; ctx.textAlign="center"; ctx.fillText("💫",c.x,c.y-bob-c.r-22); }
@@ -326,7 +352,6 @@ function drawChar(c){
 function render(){
   ctx.save();
   if(shakeT>0){ ctx.translate((Math.random()-.5)*6,(Math.random()-.5)*6); }
-  // grass
   ctx.fillStyle="#9ccc85"; ctx.fillRect(0,0,W,H);
   ctx.fillStyle="#a7d492";
   for(let i=0;i<8;i++)for(let j=0;j<12;j++)
@@ -347,12 +372,28 @@ function render(){
     ctx.globalAlpha=p.life; ctx.beginPath();
     ctx.arc(p.x,p.y,3*p.life,0,7); ctx.fillStyle=p.color; ctx.fill(); ctx.globalAlpha=1;
   }
-  // player hud
   const me=chars[0];
   ctx.font="15px serif"; ctx.textAlign="left";
   for(let i=0;i<5;i++)ctx.fillText(i<me.hp?"❤️":"🖤",10+i*20,24);
   ctx.font="12px sans-serif"; ctx.fillStyle="rgba(30,45,30,.75)";
-  ctx.fillText(me.held?("手里："+ITEM_EMOJI[me.held]+" "+me.held):"空手——去捡道具！",10,42);
+  ctx.fillText(me.held?("手里："+me.held+"（按住右下按钮蓄力，松手扔）"):"空手——去捡道具！",10,42);
+  // charge bar above player
+  if(charging){
+    const w=56, frac=chargeT/CHARGE_MAX;
+    ctx.fillStyle="rgba(20,28,38,.5)"; rr(me.x-w/2,me.y-me.r-46,w,8,4); ctx.fill();
+    ctx.fillStyle=frac>0.9?"#e74c3c":frac>0.5?"#f9ca24":"#6ab04c";
+    rr(me.x-w/2+2,me.y-me.r-44,(w-4)*frac,4,2); ctx.fill();
+  }
+  // throw button
+  const can=me.alive&&me.held&&me.stun<=0;
+  ctx.globalAlpha=can?0.95:0.4;
+  ctx.fillStyle=charging?"#e67e22":"#8f7a66";
+  ctx.beginPath(); ctx.arc(BTN.x,BTN.y,BTN.r,0,7); ctx.fill();
+  ctx.strokeStyle="#fff"; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.arc(BTN.x,BTN.y,BTN.r,0,7); ctx.stroke();
+  ctx.fillStyle="#fff"; ctx.font="22px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText("扔",BTN.x,BTN.y);
+  ctx.globalAlpha=1;
   ctx.restore();
 }
 function loop(now){
