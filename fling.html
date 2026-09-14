@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>弹射合成 · ZCode Games</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:none; }
+  html,body { height:100%; background:#1b2430; overflow:hidden; user-select:none;
+              font-family:"Segoe UI",system-ui,sans-serif; display:flex; align-items:center; justify-content:center; }
+  #wrap { position:relative; }
+  canvas { display:block; border-radius:10px; background:#233246; }
+  #over { position:absolute; inset:0; display:none; flex-direction:column; align-items:center;
+          justify-content:center; background:rgba(10,15,22,.72); border-radius:10px; color:#fff; }
+  #over h2 { font-size:2rem; margin-bottom:8px; }
+  #over p { color:#cfd8e3; margin-bottom:18px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="over"><h2>本局结束</h2><p id="final"></p><p>点击任意处再来一局</p></div>
+</div>
+<script src="matter.min.js"></script>
+<script>
+"use strict";
+const {Engine,World,Bodies,Body,Events,Composite} = Matter;
+const W=420, H=700, DANGER=130;
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+const overEl=document.getElementById("over"), finalEl=document.getElementById("final");
+function fit(){
+  const s=Math.min(innerWidth/W, innerHeight/H);
+  cv.style.width=(W*s)+"px"; cv.style.height=(H*s)+"px";
+  cv.width=W*devicePixelRatio; cv.height=H*devicePixelRatio;
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+addEventListener("resize",fit); fit();
+
+// fruit levels: radius, color, emoji
+const FRUITS=[
+  [14,"#e74c3c","🍒"],[18,"#fd79a8","🍓"],[23,"#a29bfe","🍇"],[29,"#f39c12","🍊"],
+  [36,"#e17055","🍎"],[44,"#00b894","🍐"],[53,"#fab1a0","🍑"],[63,"#fdcb6e","🍍"],
+  [74,"#55efc4","🍈"],[86,"#00cec9","🍉"]
+];
+let engine, fruits=[], particles=[], score=0,
+    best=+localStorage.getItem("flingBest")||0,
+    curLv=0, nextLv=0, aiming=false, aimStart=null, aimEnd=null,
+    over=false, dangerTime=0, last=performance.now(), idle=0;
+
+function makeFruit(lv,x,y){
+  const [r,color,em]=FRUITS[lv];
+  const b=Bodies.circle(x,y,r,{restitution:.15,friction:.08,frictionAir:.008,density:.0012});
+  b.plugin={lv,em,color,r};
+  fruits.push(b); World.add(engine.world,b);
+  return b;
+}
+function newGame(){
+  if(engine) World.clear(engine.world), Engine.clear(engine);
+  engine=Engine.create(); engine.gravity.y=1;
+  fruits=[]; particles=[]; score=0; over=false; dangerTime=0;
+  const wallOpt={isStatic:true,friction:.1};
+  World.add(engine.world,[
+    Bodies.rectangle(W/2,H+30,W+200,60,wallOpt),
+    Bodies.rectangle(-30,H/2,60,H+400,wallOpt),
+    Bodies.rectangle(W+30,H/2,60,H+400,wallOpt)
+  ]);
+  curLv=Math.random()*3|0; nextLv=Math.random()*4|0;
+  overEl.style.display="none";
+}
+function pop(x,y,color,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, s=1+Math.random()*3;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:1,color});
+  }
+}
+function merge(a,b){
+  const lv=a.plugin.lv;
+  if(lv>=FRUITS.length-1){ pop(a.position.x,a.position.y,"#ffe66d",24); score+=200; return; }
+  const mx=(a.position.x+b.position.x)/2, my=(a.position.y+b.position.y)/2;
+  pop(mx,my,a.plugin.color,14);
+  World.remove(engine.world,a); World.remove(engine.world,b);
+  fruits=fruits.filter(f=>f!==a&&f!==b);
+  const nf=makeFruit(lv+1,mx,my);
+  Body.setVelocity(nf,{x:(Math.random()-.5),y:-2});
+  score+=(lv+1)*3;
+}
+Events.on(engine,"collisionStart",e=>{
+  for(const p of e.pairs){
+    const a=p.bodyA, b=p.bodyB;
+    if(a.plugin&&b.plugin&&a.plugin.lv===b.plugin.lv&&!a.plugin.dead&&!b.plugin.dead){
+      a.plugin.dead=b.plugin.dead=true; merge(a,b);
+    }
+  }
+});
+function launch(vx,vy){
+  const f=makeFruit(curLv,W/2,H-60);
+  Body.setVelocity(f,{x:vx,y:vy});
+  curLv=nextLv; nextLv=Math.random()*5|0;
+}
+function dangerCheck(dt){
+  let bad=false;
+  for(const f of fruits) if(f.position.y-f.plugin.r<DANGER&&f.speed<.5) bad=true;
+  dangerTime=bad?dangerTime+dt:0;
+  if(dangerTime>1.5){
+    over=true;
+    if(score>best){best=score;localStorage.setItem("flingBest",best);}
+    finalEl.textContent="得分 "+score+" · 最高 "+best;
+    overEl.style.display="flex";
+  }
+}
+// input: drag anywhere = aim & fling
+function toWorld(t){
+  const r=cv.getBoundingClientRect(), s=W/r.width;
+  return {x:(t.clientX-r.left)*s, y:(t.clientY-r.top)*s};
+}
+cv.addEventListener("touchstart",e=>{ if(over){newGame();return;}
+  aiming=true; aimStart=toWorld(e.touches[0]); aimEnd=aimStart; e.preventDefault(); },{passive:false});
+cv.addEventListener("touchmove",e=>{ if(aiming) aimEnd=toWorld(e.touches[0]); e.preventDefault(); },{passive:false});
+cv.addEventListener("touchend",e=>{
+  if(!aiming)return; aiming=false;
+  const dx=aimStart.x-aimEnd.x, dy=aimStart.y-aimEnd.y;
+  const len=Math.hypot(dx,dy);
+  if(len<20)return;
+  const k=Math.min(14,len*0.075)/len;
+  launch(dx*k,dy*k);
+});
+// mouse support
+cv.addEventListener("mousedown",e=>{ if(over){newGame();return;} aiming=true; aimStart={x:e.offsetX,y:e.offsetY}; aimEnd=aimStart; });
+cv.addEventListener("mousemove",e=>{ if(aiming) aimEnd={x:e.offsetX,y:e.offsetY}; });
+cv.addEventListener("mouseup",e=>{
+  if(!aiming)return; aiming=false;
+  const dx=aimStart.x-aimEnd.x, dy=aimStart.y-aimEnd.y, len=Math.hypot(dx,dy);
+  if(len<20)return;
+  const k=Math.min(14,len*0.075)/len;
+  launch(dx*k,dy*k);
+});
+function drawPreview(){
+  const dx=aimStart.x-aimEnd.x, dy=aimStart.y-aimEnd.y, len=Math.hypot(dx,dy);
+  if(len<20)return;
+  const k=Math.min(14,len*0.075)/len;
+  let px=W/2, py=H-60, vx=dx*k, vy=dy*k;
+  ctx.fillStyle="rgba(255,255,255,.5)";
+  for(let i=0;i<36;i++){
+    vy+=0.278; px+=vx; py+=vy;
+    if(i%3===0){ctx.beginPath();ctx.arc(px,py,4-i/14,0,7);ctx.fill();}
+    if(py>H)break;
+  }
+}
+function render(dt){
+  ctx.clearRect(0,0,W,H);
+  // danger line
+  ctx.strokeStyle=dangerTime>0?"#e74c3c":"rgba(255,255,255,.18)";
+  ctx.setLineDash([8,8]); ctx.beginPath();
+  ctx.moveTo(0,DANGER); ctx.lineTo(W,DANGER); ctx.stroke(); ctx.setLineDash([]);
+  for(const f of fruits){
+    ctx.beginPath(); ctx.arc(f.position.x,f.position.y,f.plugin.r,0,7);
+    ctx.fillStyle=f.plugin.color; ctx.fill();
+    ctx.font=(f.plugin.r*1.15)+"px serif";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(f.plugin.em,f.position.x,f.position.y);
+  }
+  for(const p of particles){
+    ctx.globalAlpha=p.life; ctx.beginPath();
+    ctx.arc(p.x,p.y,3.5*p.life,0,7); ctx.fillStyle=p.color; ctx.fill();
+    ctx.globalAlpha=1;
+  }
+  // launcher: current + next
+  const [rc,ec]=FRUITS[curLv], [rn,en]=FRUITS[nextLv];
+  ctx.beginPath(); ctx.arc(W/2,H-60,rc,0,7); ctx.fillStyle=rc==="#e74c3c"?"#e74c3c":rc; ctx.globalAlpha=.85;
+  ctx.fill(); ctx.globalAlpha=1;
+  ctx.font=(rc*1.15)+"px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(ec,W/2,H-60);
+  ctx.font="20px serif"; ctx.fillText(en,W/2+rc+34,H-60);
+  ctx.font="15px sans-serif"; ctx.fillStyle="#fff";
+  ctx.textAlign="left"; ctx.fillText("分数 "+score+"  最高 "+best,14,26);
+  if(aiming)drawPreview();
+  // first-use hint
+  idle+=dt;
+  if(idle<6&&!aiming&&fruits.length<2){
+    ctx.globalAlpha=.5+0.4*Math.sin(idle*4);
+    ctx.font="15px sans-serif"; ctx.fillStyle="#fff"; ctx.textAlign="center";
+    ctx.fillText("按住并拖动，松手发射",W/2,H-130);
+    ctx.globalAlpha=1;
+  }
+}
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  if(!over){
+    Engine.update(engine,1000/60);
+    for(const p of particles){p.x+=p.vx;p.y+=p.vy;p.vy+=.12;p.life-=.03;}
+    particles=particles.filter(p=>p.life>0);
+    dangerCheck(dt);
+  }
+  render(dt);
+  requestAnimationFrame(loop);
+}
+newGame();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

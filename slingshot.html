@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>弹弓拆塔 · ZCode Games</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:none; }
+  html,body { height:100%; background:#2d3436; overflow:hidden; user-select:none;
+              font-family:"Segoe UI",system-ui,sans-serif; display:flex; align-items:center; justify-content:center; }
+  #wrap { position:relative; }
+  canvas { display:block; border-radius:10px; background:#74b9ff; }
+  #banner { position:absolute; top:8px; left:50%; transform:translateX(-50%);
+            color:#fff; font-size:15px; background:rgba(10,15,22,.45); padding:5px 14px; border-radius:14px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="banner"></div>
+</div>
+<script src="matter.min.js"></script>
+<script>
+"use strict";
+const {Engine,World,Bodies,Body,Events,Composite} = Matter;
+const W=420, H=700, GROUND=H-70, SLING={x:70,y:GROUND-110};
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+const banner=document.getElementById("banner");
+function fit(){
+  const s=Math.min(innerWidth/W, innerHeight/H);
+  cv.style.width=(W*s)+"px"; cv.style.height=(H*s)+"px";
+  cv.width=W*devicePixelRatio; cv.height=H*devicePixelRatio;
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+addEventListener("resize",fit); fit();
+
+const COLORS={wood:"#b58968",stone:"#93989e",target:"#e74c3c",crown:"#fdcb6e"};
+// levels: [x%, y(height above ground), w, h, kind]  — first levels are trivial
+const LEVELS=[
+  [[62,80,34,34,"target"]],
+  [[56,120,30,90,"wood"],[62,60,34,34,"target"]],
+  [[58,150,30,140,"wood"],[66,60,34,34,"target"],[74,60,34,34,"target"]],
+  [[55,180,32,170,"wood"],[63,180,32,170,"wood"],[59,60,34,34,"target"],[59,110,34,34,"crown"]],
+  [[52,220,30,220,"wood"],[60,150,30,150,"wood"],[68,80,30,80,"wood"],[56,60,34,34,"target"],[64,60,34,34,"target"]],
+  [[50,240,28,240,"wood"],[58,240,28,240,"wood"],[66,240,28,240,"wood"],[54,60,34,34,"target"],[62,60,34,34,"target"],[58,110,34,34,"crown"]]
+];
+let engine, blocks=[], balls=[], shots=0, level=0, aiming=false,
+    aimStart=null, aimEnd=null, dragging=false, loaded=null,
+    last=performance.now(), won=false, restTimer=0;
+
+function buildLevel(n){
+  if(engine) World.clear(engine.world), Engine.clear(engine);
+  engine=Engine.create(); engine.gravity.y=1;
+  blocks=[]; balls=[]; shots=0; won=false; restTimer=0; loaded=null;
+  World.add(engine.world,[
+    Bodies.rectangle(W/2,GROUND+30,W+200,60,{isStatic:true,friction:.6}),
+    Bodies.rectangle(-30,H/2,60,H+400,{isStatic:true}),
+    Bodies.rectangle(W+30,H/2,60,H+400,{isStatic:true})
+  ]);
+  const def=LEVELS[n];
+  for(const [px,hAbove,w,h,kind] of def){
+    const x=W*px/100, y=GROUND-hAbove-h/2;
+    const opt=kind==="target"?{density:.0008}:kind==="crown"?{density:.0006}:{density:.0016};
+    const b=Bodies.rectangle(x,y,w,h,opt);
+    b.plugin={kind,w,h};
+    blocks.push(b); World.add(engine.world,b);
+  }
+  load();
+}
+function load(){
+  if(loaded)World.remove(engine.world,loaded);
+  loaded=Bodies.circle(SLING.x,SLING.y,11,{density:.004,friction:.3,restitution:.1});
+  loaded.plugin={kind:"ball"};
+  Body.setStatic(loaded,true);
+  World.add(engine.world,loaded);
+}
+function fire(vx,vy){
+  if(!loaded)return;
+  Body.setStatic(loaded,false);
+  Body.setPosition(loaded,{x:SLING.x+vx*2.2,y:SLING.y+vy*2.2});
+  Body.setVelocity(loaded,{x:vx,y:vy});
+  balls.push(loaded); loaded=null; shots++;
+  setTimeout(load,700);
+}
+Events.on(engine,"collisionStart",e=>{
+  for(const p of e.pairs){
+    for(const b of [p.bodyA,p.bodyB]){
+      if(b.plugin&&b.plugin.kind==="target"&&!b.plugin.dead){
+        const hit=Math.max(p.collision.depth,0);
+        b.plugin.hp=(b.plugin.hp||0)+1;
+        // targets topple easily: any solid hit or falling off kills them
+        if(b.plugin.hp>=1&&b.speed>1.2)kill(b);
+        if(b.position.y>GROUND+20)kill(b);
+      }
+      if(b.plugin&&b.plugin.kind==="crown"&&!b.plugin.dead&&b.position.y>GROUND+20)kill(b);
+    }
+  }
+});
+function kill(b){
+  b.plugin.dead=true;
+  World.remove(engine.world,b);
+  blocks=blocks.filter(x=>x!==b);
+}
+function levelDone(){
+  return blocks.every(b=>b.plugin.kind!=="target"&&b.plugin.kind!=="crown");
+}
+function toWorld(t){
+  const r=cv.getBoundingClientRect(), s=W/r.width;
+  return {x:(t.clientX-r.left)*s, y:(t.clientY-r.top)*s};
+}
+function tryFire(){
+  const dx=SLING.x-aimEnd.x, dy=SLING.y-aimEnd.y;
+  const len=Math.hypot(dx,dy);
+  if(len<18){load();return;}
+  const k=Math.min(17,len*0.085)/len;
+  fire(dx*k,dy*k);
+}
+cv.addEventListener("touchstart",e=>{
+  const p=toWorld(e.touches[0]);
+  if(Math.hypot(p.x-SLING.x,p.y-SLING.y)<70){dragging=true;aiming=true;aimEnd=p;}
+  e.preventDefault();
+},{passive:false});
+cv.addEventListener("touchmove",e=>{ if(dragging)aimEnd=toWorld(e.touches[0]); e.preventDefault(); },{passive:false});
+cv.addEventListener("touchend",e=>{ if(dragging){dragging=false;aiming=false;tryFire();} });
+cv.addEventListener("mousedown",e=>{
+  const p={x:e.offsetX,y:e.offsetY};
+  if(Math.hypot(p.x-SLING.x,p.y-SLING.y)<70){dragging=true;aiming=true;aimEnd=p;}
+});
+cv.addEventListener("mousemove",e=>{ if(dragging)aimEnd={x:e.offsetX,y:e.offsetY}; });
+cv.addEventListener("mouseup",()=>{ if(dragging){dragging=false;aiming=false;tryFire();} });
+function drawAim(){
+  const dx=SLING.x-aimEnd.x, dy=SLING.y-aimEnd.y, len=Math.hypot(dx,dy);
+  if(len<10)return;
+  const k=Math.min(17,len*0.085)/len;
+  let px=SLING.x, py=SLING.y, vx=dx*k, vy=dy*k;
+  ctx.fillStyle="rgba(255,255,255,.55)";
+  for(let i=0;i<60;i++){
+    vy+=0.278; px+=vx; py+=vy;
+    if(i%4===0){ctx.beginPath();ctx.arc(px,py,4,0,7);ctx.fill();}
+    if(py>GROUND)break;
+  }
+}
+function render(){
+  // sky + ground
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#74b9ff"); g.addColorStop(1,"#a8d8ff");
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#576574"; ctx.fillRect(0,GROUND,W,H-GROUND);
+  ctx.fillStyle="#4a6572"; ctx.fillRect(0,GROUND,W,8);
+  // sling post
+  ctx.strokeStyle="#6d4c41"; ctx.lineWidth=7;
+  ctx.beginPath(); ctx.moveTo(SLING.x,SLING.y); ctx.lineTo(SLING.x,GROUND); ctx.stroke();
+  for(const b of blocks){
+    ctx.save(); ctx.translate(b.position.x,b.position.y); ctx.rotate(b.angle);
+    const {w,h,kind}=b.plugin;
+    ctx.fillStyle=COLORS[kind];
+    if(kind==="crown"){ctx.beginPath();ctx.arc(0,0,w/2,0,7);ctx.fill();}
+    else ctx.fillRect(-w/2,-h/2,w,h);
+    if(kind==="target"){ctx.strokeStyle="#fff";ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(0,0,Math.min(w,h)/4,0,7);ctx.stroke();}
+    ctx.restore();
+  }
+  for(const b of balls.concat(loaded?[loaded]:[])){
+    ctx.beginPath(); ctx.arc(b.position.x,b.position.y,11,0,7);
+    ctx.fillStyle="#2d3436"; ctx.fill();
+  }
+  // bands
+  if(loaded&&dragging){
+    ctx.strokeStyle="#3c2415"; ctx.lineWidth=5;
+    ctx.beginPath(); ctx.moveTo(SLING.x-8,SLING.y); ctx.lineTo(loaded.position.x,loaded.position.y); ctx.lineTo(SLING.x+8,SLING.y); ctx.stroke();
+  }
+  ctx.font="15px sans-serif"; ctx.fillStyle="#fff"; ctx.textAlign="left";
+  ctx.fillText("关卡 "+(level+1)+"/"+LEVELS.length+"  发射 "+shots,14,26);
+  if(dragging)drawAim();
+}
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  Engine.update(engine,1000/60);
+  // cull fallen balls
+  for(const b of balls) if(b.position.y>H+60||b.position.x<-60||b.position.x>W+60){
+    World.remove(engine.world,b);
+  }
+  balls=balls.filter(b=>b.position.y<H+60&&b.position.x>-60&&b.position.x<W+60);
+  if(!won&&levelDone()){
+    won=true;
+    if(level<LEVELS.length-1){
+      banner.textContent="过关！"; level++; restTimer=1.4;
+    }else{
+      banner.textContent="全部通关！再玩一遍？"; restTimer=2.2;
+      level=0;
+    }
+  }
+  if(won&&restTimer>0){ restTimer-=dt; if(restTimer<=0){banner.textContent="";buildLevel(level);} }
+  render();
+  requestAnimationFrame(loop);
+}
+buildLevel(0);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

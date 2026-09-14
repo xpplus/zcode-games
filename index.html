@@ -48,6 +48,9 @@
   .dpad button:active { background:#6f5d4e; }
   .dpad .blank { visibility:hidden; }
   .hint { margin-top:8px; color:#a89f94; font-size:.85rem; }
+  .games { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; justify-content:center; }
+  .games a { color:#fff; text-decoration:none; font-size:.9rem; padding:9px 14px;
+             border-radius:8px; background:rgba(143,122,102,.9); }
 </style>
 </head>
 <body>
@@ -69,6 +72,12 @@
   <button data-dir="3">◀</button><button data-dir="2">▼</button><button data-dir="1">▶</button>
 </div>
 <div class="hint">滑动或用方向键移动方块</div>
+<div class="games">
+  <a href="fling.html">🍉 弹射合成</a>
+  <a href="slingshot.html">🎯 弹弓拆塔</a>
+  <a href="ballz.html">⚽ 弹球爬塔</a>
+  <a href="cliff.html">🪨 悬崖对决</a>
+</div>
 <script>
 "use strict";
 /* ---- pure game state: grid[y][x] = null | {v, id} ----
