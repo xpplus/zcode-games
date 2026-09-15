@@ -77,8 +77,9 @@ function freeSpot(){
   return c.length?c[Math.random()*c.length|0]:null;
 }
 function spawnItem(type){
+  const kind=typeof type==="string"?type:type.kind;   // accept either
   const s=freeSpot(); if(!s)return;
-  items.push({x:s[0],y:s[1],type});
+  items.push({x:s[0],y:s[1],type:kind});
 }
 function newGame(){
   chars=[];items=[];flying=[];parts=[];respawn=[];over=false;
@@ -402,6 +403,7 @@ function render(){
   // aim preview while charging: dotted line along facing, length by charge
   if(charging&&me.held){
     const t=TYPES.find(t=>t.kind===me.held);
+    if(t){
     const frac=Math.min(1,chargeT/CHARGE_MAX);
     const spd=t.speed*(0.45+0.55*frac);
     let px=me.x, py=me.y, vx=me.fx*spd, vy=me.fy*spd;
@@ -416,6 +418,7 @@ function render(){
     ctx.fillStyle="rgba(20,28,38,.5)"; rr(me.x-w/2,me.y-me.r-46,w,8,4); ctx.fill();
     ctx.fillStyle=frac>0.9?"#e74c3c":frac>0.5?"#f9ca24":"#6ab04c";
     rr(me.x-w/2+2,me.y-me.r-44,(w-4)*frac,4,2); ctx.fill();
+    }
   }
   // status toast so throw attempts are never silent
   if(toast.t>0){
@@ -441,10 +444,27 @@ function render(){
 }
 function loop(now){
   const dt=Math.min(.05,(now-last)/1000); last=now;
-  if(!over)update(dt);
-  render();
+  try{
+    if(!over)update(dt);
+    render();
+  }catch(err){
+    // black box: paint runtime errors on screen so a frozen frame explains itself
+    ctx.save(); ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+    ctx.fillStyle="rgba(60,0,0,.88)"; ctx.fillRect(0,0,W,90);
+    ctx.fillStyle="#ffdede"; ctx.font="12px monospace"; ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+    ctx.fillText("错误: "+err.message,8,24);
+    ctx.fillText((err.stack||"").split("\n")[1]||"",8,44);
+    ctx.fillText((err.stack||"").split("\n")[2]||"",8,62);
+    ctx.restore();
+  }
   requestAnimationFrame(loop);
 }
+addEventListener("error",e=>{
+  const d=document.createElement("div");
+  d.style.cssText="position:fixed;top:0;left:0;right:0;background:#500;color:#fff;font:12px monospace;padding:6px;z-index:99;white-space:pre-wrap";
+  d.textContent="错误: "+e.message+" @ 行 "+e.lineno;
+  document.body.appendChild(d);
+});
 newGame();
 requestAnimationFrame(loop);
 </script>
