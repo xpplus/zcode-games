@@ -218,6 +218,14 @@ cv.addEventListener("touchend",e=>{
     else releaseThrow();
   }
 });
+// long-press can end the touch with cancel instead of end (esp. in-app browsers)
+cv.addEventListener("touchcancel",e=>{
+  for(const t of e.changedTouches){
+    if(joy&&t.identifier===joy.id){ joy=null; joyVX=joyVY=0; }
+    else releaseThrow();
+  }
+});
+addEventListener("contextmenu",e=>e.preventDefault());   // block long-press menu
 addEventListener("keydown",e=>{
   keys[e.key]=true; if(e.code)keys[e.code]=true;    // e.code survives IME interception
   if(e.key===" "||e.code==="Space"){
@@ -237,7 +245,9 @@ cv.addEventListener("mousedown",e=>{
   const p={x:e.offsetX,y:e.offsetY};
   if(inBtn(p))startCharge();
 });
-cv.addEventListener("mouseup",()=>releaseThrow());
+// window-level: mouseup outside the canvas must still throw
+addEventListener("mouseup",()=>releaseThrow());
+addEventListener("blur",()=>releaseThrow());
 const keys={};
 /* ---- update ---- */
 function update(dt){
