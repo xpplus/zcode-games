@@ -60,8 +60,10 @@ const BTN={x:W-56,y:H-58,r:32};                     // throw button (hold to cha
 
 let chars=[], items=[], flying=[], parts=[], respawn=[],
     over=false, last=performance.now(), shakeT=0,
-    joy=null, joyVX=0, joyVY=0, charging=false, chargeT=0;
+    joy=null, joyVX=0, joyVY=0, charging=false, chargeT=0,
+    toast={text:"",t:0};
 const CHARGE_MAX=1.2;
+function showToast(text){ toast={text,t:1.4}; }
 
 function makeChar(x,y,em,isAI){
   return {x,y,r:15,hp:5,em,isAI,vx:0,vy:0,fx:0,fy:-1,   // facing dir
@@ -186,11 +188,13 @@ function startCharge(){
   const me=chars[0];
   if(over||charging)return;
   if(me.alive&&me.held&&me.stun<=0){ charging=true; chargeT=0; }
+  else if(!me.held)showToast("空手！先去捡道具");
 }
 function releaseThrow(){
   if(!charging)return; charging=false;
   const me=chars[0];
-  if(me.alive&&me.held)throwItem(me,Math.min(1,chargeT/CHARGE_MAX));
+  if(me.alive&&me.held){ throwItem(me,Math.min(1,chargeT/CHARGE_MAX)); showToast("扔出！"); }
+  else if(!me.held)showToast("空手！先去捡道具");
 }
 function inBtn(p){ return Math.hypot(p.x-BTN.x,p.y-BTN.y)<BTN.r+8; }
 cv.addEventListener("touchstart",e=>{
@@ -313,6 +317,7 @@ function update(dt){
   for(const p of parts){p.x+=p.vx;p.y+=p.vy;p.vy+=.1;p.life-=.04;}
   parts=parts.filter(p=>p.life>0);
   if(shakeT>0)shakeT-=dt;
+  if(toast.t>0)toast.t-=dt;
   checkWin();
 }
 /* ---- render ---- */
@@ -394,12 +399,33 @@ function render(){
   for(let i=0;i<5;i++)ctx.fillText(i<me.hp?"❤️":"🖤",10+i*20,24);
   ctx.font="12px sans-serif"; ctx.fillStyle="rgba(30,45,30,.75)";
   ctx.fillText(me.held?("手里："+me.held+"（按住右下按钮蓄力，松手扔）"):"空手——去捡道具！",10,42);
-  // charge bar above player
-  if(charging){
-    const w=56, frac=chargeT/CHARGE_MAX;
+  // aim preview while charging: dotted line along facing, length by charge
+  if(charging&&me.held){
+    const t=TYPES.find(t=>t.kind===me.held);
+    const frac=Math.min(1,chargeT/CHARGE_MAX);
+    const spd=t.speed*(0.45+0.55*frac);
+    let px=me.x, py=me.y, vx=me.fx*spd, vy=me.fy*spd;
+    ctx.fillStyle="rgba(255,255,255,.65)";
+    for(let i=0;i<60;i++){
+      vy+=0.278; px+=vx; py+=vy;
+      if(i%4===0){ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();}
+      if(px<WALL||px>W-WALL||py<WALL||py>H-WALL)break;
+    }
+    // charge bar above player
+    const w=56;
     ctx.fillStyle="rgba(20,28,38,.5)"; rr(me.x-w/2,me.y-me.r-46,w,8,4); ctx.fill();
     ctx.fillStyle=frac>0.9?"#e74c3c":frac>0.5?"#f9ca24":"#6ab04c";
     rr(me.x-w/2+2,me.y-me.r-44,(w-4)*frac,4,2); ctx.fill();
+  }
+  // status toast so throw attempts are never silent
+  if(toast.t>0){
+    ctx.globalAlpha=Math.min(1,toast.t*2);
+    ctx.font="18px sans-serif"; ctx.textAlign="center";
+    ctx.fillStyle="rgba(20,28,38,.65)";
+    const tw=ctx.measureText(toast.text).width+28;
+    rr(W/2-tw/2,96,tw,34,10); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.fillText(toast.text,W/2,113);
+    ctx.globalAlpha=1;
   }
   // throw button
   const can=me.alive&&me.held&&me.stun<=0;
