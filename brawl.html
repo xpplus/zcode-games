@@ -190,7 +190,7 @@ function startCharge(){
 function releaseThrow(){
   if(!charging)return; charging=false;
   const me=chars[0];
-  if(me.alive&&me.held&&me.stun<=0)throwItem(me,Math.min(1,chargeT/CHARGE_MAX));
+  if(me.alive&&me.held)throwItem(me,Math.min(1,chargeT/CHARGE_MAX));
 }
 function inBtn(p){ return Math.hypot(p.x-BTN.x,p.y-BTN.y)<BTN.r+8; }
 cv.addEventListener("touchstart",e=>{
@@ -220,7 +220,12 @@ cv.addEventListener("touchend",e=>{
 });
 addEventListener("keydown",e=>{
   keys[e.key]=true; if(e.code)keys[e.code]=true;    // e.code survives IME interception
-  if(e.key===" "||e.code==="Space"){ e.preventDefault(); if(!charging)startCharge(); }
+  if(e.key===" "||e.code==="Space"){
+    e.preventDefault();
+    if(e.repeat)return;                             // ignore auto-repeat
+    if(charging)releaseThrow();                     // 2nd tap throws even if keyup was eaten
+    else startCharge();
+  }
   if((e.key||"").startsWith("Arrow")||(e.code||"").startsWith("Arrow"))e.preventDefault();
 });
 addEventListener("keyup",e=>{
